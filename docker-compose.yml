@@ -20,13 +20,14 @@ services:
     ports:
       - "4000:4000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:14
     restart: always
     environment:
-      POSTGRES_DB: l3-db
+      POSTGRES_DB: l3agi # <-- CORRECTED NAME
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       PGPORT: 5434
@@ -34,6 +35,11 @@ services:
       - "5434:5434"
     volumes:
       - l3_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d l3agi"] # <-- CORRECTED NAME
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   zep_db:
     image: ghcr.io/getzep/postgres:latest
@@ -50,19 +56,21 @@ services:
       - "5432:5432"
     volumes:
       - zep_db_data:/var/lib/postgresql/data
+      
   zep_nlp:
     image: ghcr.io/getzep/zep-nlp-server:latest
     env_file:
       - ./zep/.env
     restart: on-failure
     healthcheck:
-      test: timeout 10s bash -c ':> /dev/tcp/127.0.0.1/5557' || exit 1
+      test: ["CMD-SHELL", "timeout 10s bash -c ':> /dev/tcp/127.0.0.1/5557' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 45s
     ports:
       - "5557:5557"
+      
   zep:
     image: ghcr.io/getzep/zep:latest
     restart: on-failure
@@ -86,7 +94,7 @@ services:
     env_file:
       - ./zep/.env
     healthcheck:
-      test: timeout 10s bash -c ':> /dev/tcp/127.0.0.1/8000' || exit 1
+      test: ["CMD-SHELL", "timeout 10s bash -c ':> /dev/tcp/127.0.0.1/8000' || exit 1"]
       interval: 5s
       timeout: 10s
       retries: 3

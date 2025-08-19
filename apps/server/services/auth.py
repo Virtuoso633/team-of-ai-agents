@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException
 from fastapi_jwt_auth import AuthJWT
 from fastapi_sqlalchemy import db
+from datetime import datetime
 
 from exceptions import UserException
 from models.account import AccountModel
@@ -28,7 +29,7 @@ def register(input: RegisterInput):
 
     # Create a new user
     user_input = UserInput(
-        name=input.name, email=input.email, password=input.password, avatar=input.avatar
+        name=input.name, email=input.email, password=input.password, avatar=input.avatar, created_on=datetime.now(), updated_on=datetime.now(),
     )
     user = UserModel.create_user(db=db, user=user_input)
 
@@ -96,20 +97,35 @@ def login_with_github(name: str, email: str, account_name: str, avatar: Optional
 
     return user
 
+    
 
 def authorize(account_id: str, Authorize: AuthJWT = Depends()) -> UserAccount:
     try:
         email = Authorize.get_jwt_subject()
         db_user = UserModel.get_user_by_email(db, email)
+
+        if not db_user:
+            raise HTTPException(status_code=401, detail="User not found from token")
+
+        db_account = None
         if account_id == "undefined" or not account_id:
-            db_account = AccountModel.get_account_created_by(db, db_user.id)
+            # Find the account via the user_account link
+            user_account = UserAccountModel.get_user_account_by_user_id(db, db_user.id)
+            if user_account:
+                db_account = AccountModel.get_account_by_id(db, user_account.account_id)
         else:
+            # Find the account via access rights
             db_account = AccountModel.get_account_by_access(
                 db, user_id=db_user.id, account_id=account_id
             )
+
+        if not db_account:
+            raise HTTPException(status_code=404, detail="Account not found for this user")
+
         return UserAccount(
             user=convert_model_to_response_user(db_user),
             account=convert_model_to_response_account(db_account),
         )
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid auth token")
+    except Exception as e:
+        # Catch any other error and raise a generic auth error
+        raise HTTPException(status_code=401, detail=f"Invalid auth token: {e}")
